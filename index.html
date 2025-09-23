@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Artimind OutPut</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Artimind OutPut</h1>
+      <div class="sheet-url">
+        <label for="sheetUrl">Sheet URL</label>
+        <input id="sheetUrl" type="url" placeholder="Dán link Google Sheet..." />
+        <button id="btnLoad" class="primary">Tải danh sách</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="filters">
+        <div class="filter-row">
+          <div id="msCountry" class="ms"></div>
+          <div id="msCategory" class="ms"></div>
+          <div id="msStyle" class="ms"></div>
+          <div class="pager">
+            <label for="pageSize" class="muted small">Mỗi trang</label>
+            <input id="pageSize" type="number" min="1" value="30" />
+            <button id="prevPage" class="btn">Prev</button>
+            <span id="pageInfo" class="muted small"></span>
+            <button id="nextPage" class="btn">Next</button>
+          </div>
+          <span id="countLabel" class="muted"></span>
+        </div>
+      </section>
+
+      <section class="content">
+        <div class="left">
+          <div class="inputs">
+            <div class="input-box">
+              <div class="label">Image input 1</div>
+              <textarea id="img1" readonly>null</textarea>
+              <div class="muted small">Link image input 1 - <a id="img1Link" target="_blank">null</a></div>
+            </div>
+            <div class="input-box">
+              <div class="label">Image input 2</div>
+              <textarea id="img2" readonly>null</textarea>
+              <div class="muted small">Link image input 2 - <a id="img2Link" target="_blank">null</a></div>
+            </div>
+          </div>
+        </div>
+        <div class="right">
+          <div class="player">
+            <video id="video" controls preload="metadata"></video>
+            <div class="muted small">Link video output: <a id="videoLink" target="_blank"></a></div>
+          </div>
+          <div id="cards" class="cards" tabindex="0" aria-label="Danh sách style"></div>
+          <div id="rows" class="rows" tabindex="0" aria-label="Danh sách video (1 dòng)"></div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+  </html>
+
+
