@@ -1,3 +1,6 @@
+.strip-wrap{grid-column:1 / -1;display:grid;grid-template-columns:32px 1fr 32px;gap:8px;align-items:center;margin-bottom:12px}
+.strip-nav{height:40px;width:32px;border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:8px;cursor:pointer}
+.strip-nav:disabled{opacity:.5;cursor:not-allowed}
 :root{--bg:#0b0f14;--panel:#121823;--muted:#8b99a7;--text:#e7eef7;--accent:#4aa3ff;--accent-2:#7b61ff;--border:#1e2837;--card:#0f141d}
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -30,14 +33,23 @@ select{background:var(--card);border:1px solid var(--border);color:var(--text);p
 .ms-item.selected .ms-check{background:var(--accent);border-color:transparent;color:#001225}
 .ms-count{color:var(--muted);font-size:12px}
 
-.content{display:grid;grid-template-columns:380px 1fr;gap:12px}
+.content{display:grid;grid-template-columns:320px 1fr;gap:12px;align-items:start}
 .left .inputs{display:grid;gap:12px}
 .input-box{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px}
 .input-box .label{font-size:12px;color:var(--muted);margin-bottom:6px}
 .input-box textarea{width:100%;min-height:180px;background:var(--card);border:1px dashed var(--border);color:var(--muted);border-radius:8px;padding:10px;resize:vertical}
 
 .right .player{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px}
-video{width:100%;max-height:420px;background:#000;border-radius:8px}
+video{width:100%;max-height:70vh;background:#000;border-radius:8px}
+
+.strip{display:flex;gap:8px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;scrollbar-width:thin;white-space:nowrap}
+.chip{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;flex:0 0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;cursor:pointer;white-space:nowrap}
+.chip .title{font-weight:700;max-width:28ch;overflow:hidden;text-overflow:ellipsis}
+.chip .sub{color:var(--muted);font-size:12px;max-width:28ch;overflow:hidden;text-overflow:ellipsis}
+.cards,.rows{display:none}
+.chip .title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip .sub{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip.selected{outline:2px solid var(--accent)}
 
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;outline:none}
 .rows{display:block}

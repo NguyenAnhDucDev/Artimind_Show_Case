@@ -9,8 +9,10 @@ const pageSizeInput = document.getElementById('pageSize');
 const prevPageBtn = document.getElementById('prevPage');
 const nextPageBtn = document.getElementById('nextPage');
 const pageInfo = document.getElementById('pageInfo');
-const cardsEl = document.getElementById('cards');
-const rowsEl = document.getElementById('rows');
+// Removed cards/rows view; we now only use strip chips
+const stripEl = document.getElementById('strip');
+const stripPrev = document.getElementById('stripPrev');
+const stripNext = document.getElementById('stripNext');
 const videoEl = document.getElementById('video');
 const videoLinkEl = document.getElementById('videoLink');
 const img1 = document.getElementById('img1');
@@ -251,9 +253,9 @@ function createMultiSelect(root, label){
 let msCountry = null, msCategory = null, msStyle = null;
 
 function populateFilters(records){
-  msCountry ||= createMultiSelect(msCountryRoot, 'Tất cả quốc gia');
-  msCategory ||= createMultiSelect(msCategoryRoot, 'Tất cả danh mục');
-  msStyle ||= createMultiSelect(msStyleRoot, 'Tất cả style');
+  msCountry ||= createMultiSelect(msCountryRoot, 'Country');
+  msCategory ||= createMultiSelect(msCategoryRoot, 'Category');
+  msStyle ||= createMultiSelect(msStyleRoot, 'Style');
   msCountry?.setData(countMap(records.map(r=>r.country||'')));
   msCategory?.setData(countMap(records.map(r=>r.categoryName||'')));
   msStyle?.setData(countMap(records.map(r=>r.styleName||'')));
@@ -301,33 +303,36 @@ function render(){
   pageInfo.textContent = `${currentPage}/${totalPages}`;
   prevPageBtn.disabled = currentPage<=1; nextPageBtn.disabled = currentPage>=totalPages;
 
-  cardsEl.innerHTML = pageItems.map((r,i)=>{
-    const statusBadge = r.status === 'success' ? 'MP4' : 'FAIL';
+  // Build top strip: only 1 row of chips
+  // Show chips count equal to current page size
+  const stripItems = pageItems;
+  stripEl.innerHTML = stripItems.map((r,i)=>{
     return `
-      <article class="card" data-index="${i}" tabindex="0" aria-label="${r.styleName}">
-        <div class="row"><span class="badge">${statusBadge}</span></div>
-        <div class="title">${escapeHtml(r.styleName)}</div>
-        <div class="meta">Category Name: ${escapeHtml(r.categoryName||'')}</div>
-        <div class="meta">geo_country: ${escapeHtml(r.country||'')}</div>
-        <div class="meta">event_timestamp: ${escapeHtml(formatTimestamp(r.timestamp))}</div>
-      </article>`;
-  }).join('');
-  rowsEl.innerHTML = pageItems.map((r,i)=>{
-    const statusBadge = r.status === 'success' ? 'MP4' : 'FAIL';
-    const ts = escapeHtml(formatTimestamp(r.timestamp));
-    const url = r.outputUrl ? `<a href="${r.outputUrl}" target="_blank">${escapeHtml(r.outputUrl)}</a>` : 'null';
-    return `
-      <div class="row-item" data-index="${i}">
-        <div class="col badge">${statusBadge}</div>
-        <div class="col title">${escapeHtml(r.styleName)}</div>
-        <div class="col">Category: ${escapeHtml(r.categoryName||'')}</div>
-        <div class="col">Country: ${escapeHtml(r.country||'')}</div>
-        <div class="col">Time: ${ts}</div>
-        <div class="col">${url}</div>
+      <div class="chip" data-index="${i}">
+        <span class="title">${escapeHtml(r.styleName)}</span>
+        <span class="sub">${escapeHtml(r.categoryName||'')}</span>
+        <span class="sub">${escapeHtml(r.country||'')}</span>
       </div>`;
   }).join('');
 
+  // Remove legacy views (cards/rows)
+
   const selectFromLocal = (idx)=>{ selectCard(idx); };
+  stripEl.querySelectorAll('.chip').forEach(chip=>chip.addEventListener('click',()=>{
+    const idx = Number(chip.getAttribute('data-index'));
+    selectFromLocal(idx);
+  }));
+  function updateStripNav(){
+    const canScrollLeft = stripEl.scrollLeft > 0;
+    const canScrollRight = stripEl.scrollWidth - stripEl.clientWidth - stripEl.scrollLeft > 1;
+    stripPrev.disabled = !canScrollLeft;
+    stripNext.disabled = !canScrollRight;
+  }
+  updateStripNav();
+  stripEl.removeEventListener('scroll', updateStripNav);
+  stripEl.addEventListener('scroll', updateStripNav);
+  stripPrev.onclick = ()=> stripEl.scrollBy({ left: -stripEl.clientWidth, behavior: 'smooth' });
+  stripNext.onclick = ()=> stripEl.scrollBy({ left: stripEl.clientWidth, behavior: 'smooth' });
   cardsEl.querySelectorAll('.card').forEach(card=>card.addEventListener('click',()=>{
     const idx = Number(card.getAttribute('data-index'));
     selectFromLocal(idx);
@@ -358,12 +363,14 @@ function selectCard(idx){
       }
     });
   };
-  cardsEl.querySelectorAll('.card').forEach((el,i)=>{
+  stripEl.querySelectorAll('.chip').forEach((el,i)=>{
     el.classList.toggle('selected', i===idx);
   });
-  rowsEl.querySelectorAll('.row-item').forEach((el,i)=>{
-    el.classList.toggle('selected', i===idx);
-  });
+  // Ensure selected chip is visible
+  const chipEl = stripEl.querySelector(`.chip[data-index="${idx}"]`);
+  if(chipEl && typeof chipEl.scrollIntoView === 'function'){
+    chipEl.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+  }
   const rec = visibleRecords[selectedIndex];
   if(!rec) return;
   if(rec.outputUrl){
@@ -381,8 +388,8 @@ function selectCard(idx){
   }
 }
 
-// Keyboard navigation across visible cards
-cardsEl.addEventListener('keydown', (e)=>{
+// Keyboard navigation across chips
+stripEl.addEventListener('keydown', (e)=>{
   if(!visibleRecords.length) return;
   const columns = computeColumnCount();
   if(['ArrowRight','ArrowLeft','ArrowDown','ArrowUp','Home','End'].includes(e.key)){
@@ -405,9 +412,9 @@ cardsEl.addEventListener('keydown', (e)=>{
 });
 
 function computeColumnCount(){
-  const style = getComputedStyle(cardsEl);
-  const template = style.getPropertyValue('grid-template-columns');
-  return template.split(' ').filter(Boolean).length || 1;
+  const start = (currentPage-1) * pageSize;
+  const remaining = Math.max(0, visibleRecords.length - start);
+  return Math.max(1, Math.min(pageSize, remaining));
 }
 
 // Filter listeners for multi-selects
@@ -433,11 +440,13 @@ btnLoad.addEventListener('click', async ()=>{
     allRecords = groupRows(rows).filter(r => r && r.status === 'success' && r.outputUrl);
     populateFilters(allRecords);
     render();
-    // Focus cards for keyboard navigation
-    setTimeout(()=>{ cardsEl.focus(); selectCard(0); }, 0);
+    // Focus strip for keyboard navigation
+    setTimeout(()=>{ stripEl.focus(); selectCard(0); }, 0);
   }catch(err){
     console.error(err);
-    alert('Không thể tải sheet. Kiểm tra quyền chia sẻ và URL.');
+    if(!allRecords || allRecords.length === 0){
+      alert('Không thể tải sheet. Kiểm tra quyền chia sẻ và URL.');
+    }
   }finally{
     btnLoad.disabled = false; btnLoad.textContent = 'Tải danh sách';
   }
@@ -458,28 +467,23 @@ if(!sheetUrlInput.value){
 async function loadSheetRows(inputUrl){
   const ids = extractSheetIdAndGid(inputUrl);
   if(!ids) throw new Error('URL không hợp lệ');
-  const candidates = buildCandidateCsvUrls(inputUrl);
   const errors = [];
-  // 1) Try candidates directly
-  for(const url of candidates){
-    try{
-      const text = await fetchCsvText(url);
-      return parseCsv(text);
-    }catch(e){ errors.push({ url, error: String(e) }); }
-  }
-  // 2) Proxy via r.jina.ai
-  for(const url of candidates){
-    try{
-      const proxied = `https://r.jina.ai/http/${url.replace(/^https?:\/\//,'')}`;
-      const text = await fetchCsvText(proxied);
-      return parseCsv(text);
-    }catch(e){ errors.push({ proxied: url, error: String(e) }); }
-  }
-  // 3) Fallback to GViz JSONP table parsing
+  // 1) Prefer GViz JSONP (bypass CORS reliably)
   try{
     const rows = await fetchViaGvizJsonp(ids.id, ids.gid);
     if(rows && rows.length) return rows;
   }catch(e){ errors.push({ jsonp:true, error: String(e) }); }
+  // 2) Fallback to CSV via r.jina.ai proxy
+  try{
+    const candidates = buildCandidateCsvUrls(inputUrl);
+    for(const url of candidates){
+      const proxied = `https://r.jina.ai/http/${url.replace(/^https?:\/\//,'')}`;
+      try{
+        const text = await fetchCsvText(proxied);
+        return parseCsv(text);
+      }catch(err){ errors.push({ proxied:url, error:String(err) }); }
+    }
+  }catch(err){ errors.push({ build:true, error:String(err) }); }
   throw new Error('All load attempts failed: ' + JSON.stringify(errors).slice(0,500));
 }
 

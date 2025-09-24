@@ -37,6 +37,11 @@
       </section>
 
       <section class="content">
+        <div class="strip-wrap">
+          <button id="stripPrev" class="strip-nav" aria-label="Prev">‹</button>
+          <div id="strip" class="strip" tabindex="0" aria-label="Dải thẻ video"></div>
+          <button id="stripNext" class="strip-nav" aria-label="Next">›</button>
+        </div>
         <div class="left">
           <div class="inputs">
             <div class="input-box">
@@ -56,8 +61,6 @@
             <video id="video" controls preload="metadata"></video>
             <div class="muted small">Link video output: <a id="videoLink" target="_blank"></a></div>
           </div>
-          <div id="cards" class="cards" tabindex="0" aria-label="Danh sách style"></div>
-          <div id="rows" class="rows" tabindex="0" aria-label="Danh sách video (1 dòng)"></div>
         </div>
       </section>
     </main>
