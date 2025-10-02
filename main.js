@@ -242,10 +242,18 @@ function groupRows(rows) {
       const ev = (r0[idxKey.event_name] || '').toString().toLowerCase();
       const isSuccess = ev.includes('success');
       if (!isSuccess) { i++; continue; }
-      const chunk = data.slice(i, i + 5);
-      if (chunk.length < 5) break;
-      const allSuccess = chunk.every(r => ((r[idxKey.event_name] || '').toString().toLowerCase().includes('success')));
-      if (!allSuccess) { i++; continue; }
+      
+      // Find the end of this success group (up to 5 rows)
+      let endIndex = i;
+      while (endIndex < data.length && endIndex < i + 5) {
+        const rowEv = (data[endIndex][idxKey.event_name] || '').toString().toLowerCase();
+        if (!rowEv.includes('success')) break;
+        endIndex++;
+      }
+      
+      const chunk = data.slice(i, endIndex);
+      if (chunk.length === 0) { i++; continue; }
+      
       const assembled = { input1: null, input2: null, style: null, category: null, output: null, ts: null, country: null, subStatus: null, userPseudoId: null };
       for (const r of chunk) {
         const k = r[idxKey.key];
@@ -260,11 +268,12 @@ function groupRows(rows) {
         if (assembled.subStatus == null && idxKey.subStatus !== -1) { const sv = r[idxKey.subStatus]; if (sv && sv !== '#N/A') assembled.subStatus = sv; }
         if (assembled.userPseudoId == null && idxKey.userPseudoId !== -1) { const up = r[idxKey.userPseudoId]; if (up) assembled.userPseudoId = up; }
       }
+      
       if (assembled.output) {
         records.push({
           id: records.length,
-          input1Url: assembled.input1 || undefined,
-          input2Url: assembled.input2 || undefined,
+          input1Url: assembled.input1 || null,
+          input2Url: assembled.input2 || null,
           styleName: trimPrefix(assembled.style || '', 'Style Name:'),
           categoryName: trimPrefix(assembled.category || '', 'Category Name:'),
           outputUrl: assembled.output || undefined,
@@ -274,7 +283,7 @@ function groupRows(rows) {
           userPseudoId: assembled.userPseudoId || ''
         });
       }
-      i += 5;
+      i = endIndex; // Move to end of current group
     }
     return records;
   }
@@ -284,7 +293,7 @@ function groupRows(rows) {
   function flush() {
     if (!acc.style && !acc.category && !acc.output) return;
     if (!acc.output) { acc = { input1: null, input2: null, style: null, category: null, output: null, ts: null, country: null, subStatus: null, userPseudoId: null }; return; }
-    records.push({ id: records.length, input1Url: acc.input1 || undefined, input2Url: acc.input2 || undefined, styleName: trimPrefix(acc.style || '', 'Style Name:'), categoryName: trimPrefix(acc.category || '', 'Category Name:'), outputUrl: acc.output || undefined, timestamp: acc.ts || '', country: acc.country || '', subscriptionStatus: acc.subStatus || '', userPseudoId: acc.userPseudoId || '' });
+    records.push({ id: records.length, input1Url: acc.input1 || null, input2Url: acc.input2 || null, styleName: trimPrefix(acc.style || '', 'Style Name:'), categoryName: trimPrefix(acc.category || '', 'Category Name:'), outputUrl: acc.output || undefined, timestamp: acc.ts || '', country: acc.country || '', subscriptionStatus: acc.subStatus || '', userPseudoId: acc.userPseudoId || '' });
     acc = { input1: null, input2: null, style: null, category: null, output: null, ts: null, country: null, subStatus: null, userPseudoId: null };
   }
   for (const r of data) {
@@ -338,13 +347,18 @@ function renderVideoCards(records) {
   const end = start + pageSize;
   const pageRecords = records.slice(start, end);
   
-  videoCards.innerHTML = pageRecords.map((r, idx) => `
-    <div class="video-card" id="card-${idx + 1}" data-page-index="${idx}" data-id="${r.id}" onclick="selectVideo(${r.id})">
-      <div class="video-title">${escapeHtml(r.styleName || 'Unknown Style')}</div>
-      <div class="video-category">${escapeHtml(r.categoryName || 'Unknown Category')}</div>
-      <div class="video-location">${escapeHtml(r.country || 'Unknown Country')}</div>
-    </div>
-  `).join('');
+  videoCards.innerHTML = pageRecords.map((r, idx) => {
+    const isCancelled = r.subscriptionStatus && r.subscriptionStatus.toLowerCase().includes('cancelled');
+    return `
+      <div class="video-card" id="card-${idx + 1}" data-page-index="${idx}" data-id="${r.id}" onclick="selectVideo(${r.id})">
+        <div class="video-title">${escapeHtml(r.styleName || 'Unknown Style')}</div>
+        <div class="video-category">${escapeHtml(r.categoryName || 'Unknown Category')}</div>
+        <div class="video-location">${escapeHtml(r.country || 'Unknown Country')}</div>
+        <div class="video-user">${escapeHtml(r.userPseudoId || 'Unknown User')}</div>
+        <div class="video-subscription ${isCancelled ? 'cancelled' : ''}">${escapeHtml(r.subscriptionStatus || 'Unknown Status')}</div>
+      </div>
+    `;
+  }).join('');
 
   // Keep selection visible if any
   if (selectedGlobalIndex >= 0) {
@@ -375,27 +389,50 @@ function renderInlinePreview() {
   if (!selectedRecord) return;
   
   // input1
-  if (selectedRecord.input1Url) {
+  const input1Container = inlineImg1.parentElement;
+  const hasInput1 = selectedRecord.input1Url && 
+                   selectedRecord.input1Url !== 'null' && 
+                   selectedRecord.input1Url !== 'undefined' && 
+                   String(selectedRecord.input1Url).trim() !== '';
+  
+  if (hasInput1) {
     inlineImg1.src = selectedRecord.input1Url;
     inlineImg1.style.display = 'block';
     inlineLink1.href = selectedRecord.input1Url;
     inlineLink1.textContent = 'View Image 1';
+    input1Container.style.display = 'flex';
   } else {
-    inlineImg1.style.display = 'none';
-    inlineLink1.textContent = 'No Image 1';
-    inlineLink1.href = '#';
+    input1Container.style.display = 'none';
   }
-  // input2
-  if (selectedRecord.input2Url) {
+  
+  // input2 - ẩn hoàn toàn nếu không có hoặc giống input1
+  const input2Container = inlineImg2.parentElement;
+  const hasInput2 = selectedRecord.input2Url && 
+                   selectedRecord.input2Url !== 'null' && 
+                   selectedRecord.input2Url !== 'undefined' && 
+                   String(selectedRecord.input2Url).trim() !== '' &&
+                   selectedRecord.input2Url !== selectedRecord.input1Url; // Không hiển thị nếu giống input1
+  
+  if (hasInput2) {
     inlineImg2.src = selectedRecord.input2Url;
     inlineImg2.style.display = 'block';
     inlineLink2.href = selectedRecord.input2Url;
     inlineLink2.textContent = 'View Image 2';
+    input2Container.style.display = 'flex';
   } else {
-    inlineImg2.style.display = 'none';
-    inlineLink2.textContent = 'No Image 2';
-    inlineLink2.href = '#';
+    input2Container.style.display = 'none';
   }
+  
+  // Update grid layout based on visible items
+  const grid = document.querySelector('.inline-grid');
+  const visibleItems = [input1Container, input2Container].filter(container => 
+    container.style.display !== 'none'
+  ).length + 1; // +1 for video which is always visible
+  
+  grid.className = 'inline-grid';
+  if (visibleItems === 1) grid.classList.add('one-item');
+  else if (visibleItems === 2) grid.classList.add('two-items');
+  else if (visibleItems === 3) grid.classList.add('three-items');
   // video
   if (selectedRecord.outputUrl) {
     try { inlineVideo.pause(); } catch {}

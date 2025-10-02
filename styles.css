@@ -39,6 +39,9 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetic
 .video-title{font-weight:600;font-size:14px;color:var(--text)}
 .video-category{font-size:12px;color:var(--muted)}
 .video-location{font-size:12px;color:var(--muted)}
+.video-user{font-size:12px;color:var(--muted)}
+.video-subscription{font-size:12px;color:var(--muted)}
+.video-subscription.cancelled{color:#ef4444;font-weight:600}
 
 /* Media Preview */
 .media-preview{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.9);z-index:1000;display:flex;flex-direction:column}
@@ -86,4 +89,15 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetic
 .inline-item{display:flex;flex-direction:column;gap:8px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px}
 .inline-img{width:100%;max-height:320px;object-fit:contain;border:1px solid var(--border);border-radius:6px;background:#000}
 .inline-video{width:100%;max-height:320px;border:1px solid var(--border);border-radius:6px;background:#000}
-@media (max-width: 900px){.inline-grid{grid-template-columns:1fr}}
+
+/* Dynamic grid layout based on visible items */
+.inline-grid.one-item{grid-template-columns:1fr}
+.inline-grid.two-items{grid-template-columns:1fr 1fr}
+.inline-grid.three-items{grid-template-columns:1fr 1fr 1fr}
+
+@media (max-width: 900px){
+  .inline-grid{grid-template-columns:1fr}
+  .inline-grid.one-item,
+  .inline-grid.two-items,
+  .inline-grid.three-items{grid-template-columns:1fr}
+}
