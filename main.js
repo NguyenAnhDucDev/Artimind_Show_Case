@@ -330,12 +330,6 @@ function escapeHtml(s) {
 // -------------------------
 // UI: strip + selection
 // -------------------------
-function applyFilters() {
-  filteredRecords = allRecords;
-  currentPage = 1;
-  renderStrip();
-  updatePagination();
-}
 
 function renderVideoCards(records) {
   if (!records.length) { 
@@ -490,6 +484,17 @@ function applyFilters() {
   currentPage = 1;
   renderVideoCards(filteredRecords);
   updatePagination();
+  renderActiveFiltersBar();
+  
+  // Refresh current filter panel if it's open
+  if (filtersPanel.style.display === 'block') {
+    const current = filtersTitle.textContent.split(':')[1]?.trim();
+    const map = { Country:'country', Category:'category', Style:'style', Subscription:'subscription', User:'user' };
+    const type = map[current] || current;
+    if (type) {
+      buildAndShowFilter(type);
+    }
+  }
 }
 
 // (legacy strip/detail funcs removed)
@@ -500,8 +505,11 @@ loadBtn.addEventListener('click', async () => {
   if (!url) { alert('Vui lòng nhập URL Google Sheet'); return; }
   loadBtn.disabled = true; loadBtn.textContent = '⏳ Đang tải...';
   try {
+    console.log('Loading sheet from URL:', url);
     const rows = await loadSheetRows(url);
+    console.log('Raw rows loaded:', rows.length);
     allRecords = groupRows(rows);
+    console.log('Grouped records:', allRecords.length);
     applyFilters();
     // Không hiện alert; chỉ log nhẹ nếu rỗng
     if (allRecords.length === 0) {
@@ -544,8 +552,42 @@ filterTags.forEach(tag => {
 function buildAndShowFilter(type){
   if (!type) return;
   filtersTitle.textContent = `Filter: ${type}`;
-  // Build unique options from current allRecords
-  const values = Array.from(new Set(allRecords.map(r => {
+  
+  // Get currently filtered records (based on other active filters)
+  const currentFiltered = allRecords.filter(r => {
+    let passesAllOtherFilters = true;
+
+    if (type !== 'country') {
+      if (activeFilters.country.size > 0 && !activeFilters.country.has(r.country || '')) {
+        passesAllOtherFilters = false;
+      }
+    }
+    if (type !== 'category') {
+      if (activeFilters.category.size > 0 && !activeFilters.category.has(r.categoryName || '')) {
+        passesAllOtherFilters = false;
+      }
+    }
+    if (type !== 'style') {
+      if (activeFilters.style.size > 0 && !activeFilters.style.has(r.styleName || '')) {
+        passesAllOtherFilters = false;
+      }
+    }
+    if (type !== 'subscription') {
+      if (activeFilters.subscription.size > 0 && !activeFilters.subscription.has(r.subscriptionStatus || '')) {
+        passesAllOtherFilters = false;
+      }
+    }
+    if (type !== 'user') {
+      if (activeFilters.user.size > 0 && !activeFilters.user.has(r.userPseudoId || '')) {
+        passesAllOtherFilters = false;
+      }
+    }
+    return passesAllOtherFilters;
+  });
+  
+  
+  // Build unique options from currently filtered records
+  const values = Array.from(new Set(currentFiltered.map(r => {
     if (type === 'country') return r.country || '';
     if (type === 'category') return r.categoryName || '';
     if (type === 'style') return r.styleName || '';
@@ -553,19 +595,24 @@ function buildAndShowFilter(type){
     if (type === 'user') return r.userPseudoId || '';
     return '';
   }).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+  
+  
 
   filtersOptions.innerHTML = values.map(v => {
     const selected = activeFilters[type].has(v) ? 'selected' : '';
     return `<div class="option-chip ${selected}" data-type="${type}" data-value="${encodeHTML(v)}">${escapeHtml(v)}</div>`;
   }).join('');
 
-  // Toggle selection
+  // Toggle selection with real-time filtering
   filtersOptions.querySelectorAll('.option-chip').forEach(el => {
     el.addEventListener('click', () => {
       const t = el.getAttribute('data-type');
       const val = el.getAttribute('data-value');
       if (activeFilters[t].has(val)) activeFilters[t].delete(val); else activeFilters[t].add(val);
       el.classList.toggle('selected');
+      
+      // Apply filters immediately (real-time)
+      applyFilters();
     });
   });
 
@@ -584,7 +631,9 @@ filtersClear.addEventListener('click', () => {
   const type = map[current] || current;
   if (type && activeFilters[type]) activeFilters[type].clear();
   filtersOptions.querySelectorAll('.option-chip.selected').forEach(e=>e.classList.remove('selected'));
-  renderActiveFiltersBar();
+  
+  // Apply filters immediately (real-time)
+  applyFilters();
 });
 
 filtersClose.addEventListener('click', () => { filtersPanel.style.display = 'none'; });
