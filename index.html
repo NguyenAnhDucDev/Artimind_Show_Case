@@ -1,72 +1,87 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="vi">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Artimind OutPut</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
-    <header class="topbar">
-      <h1>Artimind OutPut</h1>
-      <div class="sheet-url">
-        <label for="sheetUrl">Sheet URL</label>
-        <input id="sheetUrl" type="url" placeholder="Dán link Google Sheet..." />
-        <button id="btnLoad" class="primary">Tải danh sách</button>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Video - Success Records</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>AI Video - Success Records</h1>
+    <div class="loader">
+      <input id="sheetUrl" type="url" class="url" placeholder="Google Sheet URL" />
+      <button id="loadBtn" class="btn">Tải</button>
+    </div>
+  </header>
+
+  <!-- Filter Bar -->
+  <div class="filter-bar">
+    <div class="filter-tags">
+      <button class="filter-tag" data-filter="country">Country</button>
+      <button class="filter-tag" data-filter="category">Category</button>
+      <button class="filter-tag" data-filter="style">Style</button>
+      <button class="filter-tag" data-filter="subscription">Subscription</button>
+      <button class="filter-tag" data-filter="user">User</button>
+    </div>
+    <div class="pagination-info">
+      <span>Mỗi trang</span>
+      <select id="pageSize" class="page-size">
+        <option value="30">30</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+      <button id="prevBtn" class="page-btn">Prev</button>
+      <span id="pageInfo" class="page-info">1/1</span>
+      <button id="nextBtn" class="page-btn">Next</button>
+      <span id="count" class="count">Đã tải 0 video.</span>
+    </div>
+  </div>
+
+  <!-- Multi-select filter panel -->
+  <div id="filtersPanel" class="filters-panel" style="display:none;">
+    <div class="filters-header">
+      <div class="filters-title" id="filtersTitle">Filter</div>
+      <div class="filters-actions">
+        <button id="filtersClear" class="btn small">Clear</button>
+        <button id="filtersApply" class="btn small">Apply</button>
+        <button id="filtersClose" class="close-btn small">✕</button>
       </div>
-    </header>
+    </div>
+    <div id="filtersOptions" class="filters-options"></div>
+  </div>
 
-    <main class="layout">
-      <section class="filters">
-        <div class="filter-row">
-          <div id="msCountry" class="ms"></div>
-          <div id="msCategory" class="ms"></div>
-          <div id="msStyle" class="ms"></div>
-          <div class="pager">
-            <label for="pageSize" class="muted small">Mỗi trang</label>
-            <input id="pageSize" type="number" min="1" value="30" />
-            <button id="prevPage" class="btn">Prev</button>
-            <span id="pageInfo" class="muted small"></span>
-            <button id="nextPage" class="btn">Next</button>
-          </div>
-          <span id="countLabel" class="muted"></span>
-        </div>
-      </section>
+  <!-- Active filters summary -->
+  <div id="activeFiltersBar" class="active-filters" style="display:none;"></div>
 
-      <section class="content">
-        <div class="strip-wrap">
-          <button id="stripPrev" class="strip-nav" aria-label="Prev">‹</button>
-          <div id="strip" class="strip" tabindex="0" aria-label="Dải thẻ video"></div>
-          <button id="stripNext" class="strip-nav" aria-label="Next">›</button>
-        </div>
-        <div class="left">
-          <div class="inputs">
-            <div class="input-box">
-              <div class="label">Image input 1</div>
-              <textarea id="img1" readonly>null</textarea>
-              <div class="muted small">Link image input 1 - <a id="img1Link" target="_blank">null</a></div>
-            </div>
-            <div class="input-box">
-              <div class="label">Image input 2</div>
-              <textarea id="img2" readonly>null</textarea>
-              <div class="muted small">Link image input 2 - <a id="img2Link" target="_blank">null</a></div>
-            </div>
-          </div>
-        </div>
-        <div class="right">
-          <div class="player">
-            <video id="video" controls preload="metadata"></video>
-            <div class="muted small">Link video output: <a id="videoLink" target="_blank"></a></div>
-          </div>
-        </div>
-      </section>
-    </main>
+  <!-- Video Cards Strip -->
+  <div class="video-strip">
+    <button id="stripPrev" class="strip-nav">‹</button>
+    <div id="videoCards" class="cards-container" tabindex="0"></div>
+    <button id="stripNext" class="strip-nav">›</button>
+  </div>
 
-    <script type="module" src="./main.js"></script>
-  </body>
-  </html>
+  <!-- Inline Media Preview (shows under the strip) -->
+  <div id="inlinePreview" class="inline-preview" style="display:none;">
+    <div class="inline-grid">
+      <div class="inline-item">
+        <h4>Image Input 1</h4>
+        <img id="inlineImg1" class="inline-img" alt="Input 1" />
+        <a id="inlineLink1" class="media-link" target="_blank">View Image 1</a>
+      </div>
+      <div class="inline-item">
+        <h4>Image Input 2</h4>
+        <img id="inlineImg2" class="inline-img" alt="Input 2" />
+        <a id="inlineLink2" class="media-link" target="_blank">View Image 2</a>
+      </div>
+      <div class="inline-item">
+        <h4>Video Output</h4>
+        <video id="inlineVideo" class="inline-video" controls></video>
+        <a id="inlineLinkVideo" class="media-link" target="_blank">Download Video</a>
+      </div>
+    </div>
+  </div>
 
-
+  <script src="main.js"></script>
+</body>
+</html>

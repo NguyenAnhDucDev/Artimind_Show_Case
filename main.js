@@ -1,535 +1,630 @@
+// Globals
+let allRecords = [];
+let filteredRecords = [];
+let currentPage = 1;
+let pageSize = 30;
+let selectedRecord = null;
+let selectedGlobalIndex = -1; // index in filteredRecords
+
+// DOM
 const sheetUrlInput = document.getElementById('sheetUrl');
-const btnLoad = document.getElementById('btnLoad');
-// Multi-select containers
-const msCountryRoot = document.getElementById('msCountry');
-const msCategoryRoot = document.getElementById('msCategory');
-const msStyleRoot = document.getElementById('msStyle');
-const countLabel = document.getElementById('countLabel');
-const pageSizeInput = document.getElementById('pageSize');
-const prevPageBtn = document.getElementById('prevPage');
-const nextPageBtn = document.getElementById('nextPage');
+const loadBtn = document.getElementById('loadBtn');
+const videoCards = document.getElementById('videoCards');
+const countEl = document.getElementById('count');
 const pageInfo = document.getElementById('pageInfo');
-// Removed cards/rows view; we now only use strip chips
-const stripEl = document.getElementById('strip');
+const pageSizeSelect = document.getElementById('pageSize');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
 const stripPrev = document.getElementById('stripPrev');
 const stripNext = document.getElementById('stripNext');
-const videoEl = document.getElementById('video');
-const videoLinkEl = document.getElementById('videoLink');
-const img1 = document.getElementById('img1');
-const img2 = document.getElementById('img2');
-const img1Link = document.getElementById('img1Link');
-const img2Link = document.getElementById('img2Link');
 
-/** Utilities */
-function extractSheetIdAndGid(googleSheetUrl){
-  try{
-    const u = new URL(googleSheetUrl);
-    const id = u.pathname.split('/d/')[1]?.split('/')[0];
-    const gid = u.searchParams.get('gid') || u.hash.split('gid=')[1] || '';
+// Filter elements
+const filterTags = document.querySelectorAll('.filter-tag');
+const filtersPanel = document.getElementById('filtersPanel');
+const filtersTitle = document.getElementById('filtersTitle');
+const filtersOptions = document.getElementById('filtersOptions');
+const filtersApply = document.getElementById('filtersApply');
+const filtersClear = document.getElementById('filtersClear');
+const filtersClose = document.getElementById('filtersClose');
+const activeFiltersBar = document.getElementById('activeFiltersBar');
+
+// Active filter state
+const activeFilters = {
+  country: new Set(),
+  category: new Set(),
+  style: new Set(),
+  subscription: new Set(),
+  user: new Set()
+};
+
+// Inline media preview elements (below strip)
+const inlinePreview = document.getElementById('inlinePreview');
+const inlineImg1 = document.getElementById('inlineImg1');
+const inlineImg2 = document.getElementById('inlineImg2');
+const inlineVideo = document.getElementById('inlineVideo');
+const inlineLink1 = document.getElementById('inlineLink1');
+const inlineLink2 = document.getElementById('inlineLink2');
+const inlineLinkVideo = document.getElementById('inlineLinkVideo');
+
+// -------------------------
+// Loader helpers
+// -------------------------
+function extractSheetIdAndGid(googleSheetUrl) {
+  try {
+    const url = new URL(googleSheetUrl);
+    const id = url.pathname.split('/d/')[1]?.split('/')[0];
+    const gid = url.searchParams.get('gid') || url.hash.split('gid=')[1] || '';
     return id ? { id, gid } : null;
-  }catch(_){ return null; }
+  } catch (_) {
+    return null;
+}
 }
 
-function buildCsvUrl(id, gid){
-  const gidPart = gid ? `&gid=${gid}` : '';
-  return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv${gidPart}`;
-}
-
-function buildCandidateCsvUrls(inputUrl){
+function buildCandidateCsvUrls(inputUrl) {
   const ids = extractSheetIdAndGid(inputUrl);
-  if(!ids) return [inputUrl];
+  if (!ids) return [inputUrl];
   const { id, gid } = ids;
   return [
-    `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid||'0'}`,
-    `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid||'0'}`
+    `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid || '0'}`,
+    `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid || '0'}`
   ];
 }
 
-async function fetchCsvText(url){
+async function fetchCsvText(url) {
   const res = await fetch(url, { credentials: 'omit' });
-  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const text = await res.text();
-  if(/<html[\s\S]*>/i.test(text)) throw new Error('HTML received');
+  if (/<html[\s\S]*>/i.test(text)) throw new Error('HTML received');
   return text;
 }
 
-function parseCsv(text){
-  // Simple CSV parser handling commas inside quotes
+function parseCsv(text) {
   const rows = [];
   let row = [];
   let value = '';
   let inQuotes = false;
-  for(let i=0;i<text.length;i++){
+  for (let i = 0; i < text.length; i++) {
     const c = text[i];
-    const next = text[i+1];
-    if(c === '"'){
-      if(inQuotes && next === '"'){ value += '"'; i++; }
+    const next = text[i + 1];
+    if (c === '"') {
+      if (inQuotes && next === '"') { value += '"'; i++; }
       else { inQuotes = !inQuotes; }
       continue;
     }
-    if(c === ',' && !inQuotes){ row.push(value); value=''; continue; }
-    if((c === '\n' || c === '\r') && !inQuotes){
-      if(value.length>0 || row.length>0){ row.push(value); rows.push(row); }
-      if(c === '\r' && next === '\n') i++;
-      row = []; value = '';
-      continue;
+    if (c === ',' && !inQuotes) { row.push(value); value = ''; continue; }
+    if ((c === '\n' || c === '\r') && !inQuotes) {
+      if (value.length > 0 || row.length > 0) { row.push(value); rows.push(row); }
+      if (c === '\r' && next === '\n') i++;
+      row = []; value = ''; continue;
     }
     value += c;
   }
-  if(value.length>0 || row.length>0){ row.push(value); rows.push(row); }
+  if (value.length > 0 || row.length > 0) { row.push(value); rows.push(row); }
   return rows;
 }
 
-function trimPrefix(text, prefix){
-  if(!text) return text;
+function trimPrefix(text, prefix) {
+  if (!text) return text;
   const idx = text.indexOf(prefix);
   return idx === -1 ? text : text.slice(idx + prefix.length).trim();
 }
 
-/**
- * Data model: We expect rows with columns:
- * A: event_name
- * B: event_params.key (style | category | output | ... )
- * C: event_params.value.string_value (value or URL)
- * D: event_timestamp
- * E: geo.country
- * Success = three rows for the same group: style, category, output
- * Fail = two rows: style, category (no output)
- */
-
-/** @typedef {{
- *  status: 'success'|'fail',
- *  styleName: string,
- *  categoryName: string,
- *  outputUrl?: string,
- *  timestamp: string,
- *  country?: string
- * }} VideoRecord */
-
-/**
- * Group raw rows into records by scanning in order and bundling keys.
- */
-function groupRows(rows){
-  const header = rows[0] || [];
-  const idxKey = {
-    event_name: header.indexOf('event_name'),
-    key: header.indexOf('event_params.key'),
-    value: header.indexOf('event_params.value.string_value'),
-    ts: header.indexOf('event_timestamp'),
-    country: header.indexOf('geo.country')
-  };
-  const data = rows.slice(1);
-  /** @type {VideoRecord[]} */
-  const records = [];
-
-  // If we have GA-style columns, chunk strictly by triplets of consecutive success rows
-  const hasEvent = idxKey.event_name !== -1 && idxKey.key !== -1 && idxKey.value !== -1;
-  if(hasEvent){
-    for(let i=0;i<data.length;){
-      const r0 = data[i];
-      const ev = (r0[idxKey.event_name]||'').toString().toLowerCase();
-      const isSuccess = ev.includes('success');
-      if(!isSuccess){ i++; continue; }
-      const chunk = data.slice(i, i+3);
-      if(chunk.length < 3){ break; }
-      // Ensure three consecutive rows are also success
-      const allSuccess = chunk.every(r => ((r[idxKey.event_name]||'').toString().toLowerCase().includes('success')));
-      if(!allSuccess){ i++; continue; }
-      const assembled = { style:null, category:null, output:null, ts:null, country:null };
-      for(const r of chunk){
-        const k = r[idxKey.key];
-        const v = r[idxKey.value];
-        if(k === 'style') assembled.style = v;
-        else if(k === 'category') assembled.category = v;
-        else if(k === 'output') assembled.output = v;
-        if(!assembled.ts) assembled.ts = r[idxKey.ts];
-        if(!assembled.country) assembled.country = r[idxKey.country];
-      }
-      if(assembled.output){
-        records.push({
-          status: 'success',
-          styleName: trimPrefix(assembled.style||'', 'Style Name:'),
-          categoryName: trimPrefix(assembled.category||'', 'Category Name:'),
-          outputUrl: assembled.output || undefined,
-          timestamp: assembled.ts || '',
-          country: assembled.country || ''
-        });
-      }
-      i += 3; // move to next triplet
-    }
-    return records;
-  }
-
-  // Fallback to previous streaming assembler (non-GA legacy CSV)
-  let acc = {style:null, category:null, output:null, ts:null, country:null};
-  function flush(){
-    if(!acc.style && !acc.category && !acc.output) return;
-    const status = acc.output ? 'success' : 'fail';
-    records.push({
-      status,
-      styleName: trimPrefix(acc.style||'', 'Style Name:'),
-      categoryName: trimPrefix(acc.category||'', 'Category Name:'),
-      outputUrl: acc.output || undefined,
-      timestamp: acc.ts || '',
-      country: acc.country || ''
-    });
-    acc = {style:null, category:null, output:null, ts:null, country:null};
-  }
-  for(const r of data){
-    const key = r[idxKey.key];
-    const val = r[idxKey.value];
-    const ts = r[idxKey.ts];
-    const country = r[idxKey.country];
-    if(key === 'style'){
-      if(acc.style || acc.category || acc.output) flush();
-      acc.style = val; acc.ts = ts; acc.country = country;
-    } else if(key === 'category'){ acc.category = val; acc.ts = ts; acc.country = country; }
-    else if(key === 'output'){ acc.output = val; acc.ts = ts; acc.country = country; flush(); }
-  }
-  flush();
-  return records;
+function normalizeHeaderName(name) {
+  return String(name || '').trim().toLowerCase().replace(/\s+/g, '_');
 }
 
-function uniqueSorted(values){
-  return Array.from(new Set(values.filter(Boolean))).sort((a,b)=>a.localeCompare(b));
-}
-
-// Multi-select helpers
-function countMap(list){
-  const m = new Map();
-  for(const v of list){ m.set(v, (m.get(v)||0)+1); }
-  return Array.from(m.entries()).map(([value,count])=>({ value, count }))
-    .sort((a,b)=> b.count - a.count || String(a.value).localeCompare(String(b.value)));
-}
-
-function createMultiSelect(root, label){
-  if(!root) return null;
-  root.classList.add('ms');
-  root.innerHTML = '';
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'ms-btn';
-  btn.textContent = label;
-  const panel = document.createElement('div');
-  panel.className = 'ms-panel';
-  const list = document.createElement('div');
-  panel.appendChild(list);
-  root.appendChild(btn);
-  root.appendChild(panel);
-  let isOpen = false;
-  let items = [];
-  const selected = new Set();
-  let onChangeCb = null;
-  function toggle(){ isOpen = !isOpen; root.classList.toggle('open', isOpen); }
-  btn.addEventListener('click', toggle);
-  document.addEventListener('click', (e)=>{ if(!root.contains(e.target)){ isOpen=false; root.classList.remove('open'); } });
-  function render(){
-    list.innerHTML = '';
-    for(const it of items){
-      const row = document.createElement('div'); row.className = 'ms-item' + (selected.has(it.value)?' selected':'');
-      const check = document.createElement('div'); check.className = 'ms-check'; check.textContent = selected.has(it.value)?'✓':'';
-      const name = document.createElement('div'); name.textContent = it.value || 'null';
-      const count = document.createElement('div'); count.className = 'ms-count'; count.textContent = String(it.count);
-      row.appendChild(check); row.appendChild(name); row.appendChild(count);
-      row.addEventListener('click', ()=>{
-        if(selected.has(it.value)) selected.delete(it.value); else selected.add(it.value);
-        render();
-        if(onChangeCb) onChangeCb(Array.from(selected));
-        updateBtn();
-      });
-      list.appendChild(row);
-    }
+function findColumnIndex(header, candidates) {
+  const norm = header.map(normalizeHeaderName);
+  for (const c of candidates) {
+    const target = normalizeHeaderName(c);
+    const exact = norm.indexOf(target);
+    if (exact !== -1) return exact;
   }
-  function updateBtn(){
-    if(selected.size) btn.textContent = `${label} (${selected.size})`; else btn.textContent = label;
+  for (let i = 0; i < norm.length; i++) {
+    if (candidates.some(c => norm[i].includes(normalizeHeaderName(c)))) return i;
   }
-  return {
-    setData(data){ items = data.slice(); render(); updateBtn(); },
-    getSelected(){ return Array.from(selected); },
-    onChange(cb){ onChangeCb = cb; }
-  };
+  return -1;
 }
 
-let msCountry = null, msCategory = null, msStyle = null;
-
-function populateFilters(records){
-  msCountry ||= createMultiSelect(msCountryRoot, 'Country');
-  msCategory ||= createMultiSelect(msCategoryRoot, 'Category');
-  msStyle ||= createMultiSelect(msStyleRoot, 'Style');
-  msCountry?.setData(countMap(records.map(r=>r.country||'')));
-  msCategory?.setData(countMap(records.map(r=>r.categoryName||'')));
-  msStyle?.setData(countMap(records.map(r=>r.styleName||'')));
-  // Ensure handlers are bound after first creation
-  if(msCountry) msCountry.onChange(()=>{ currentPage = 1; render(); });
-  if(msCategory) msCategory.onChange(()=>{ currentPage = 1; render(); });
-  if(msStyle) msStyle.onChange(()=>{ currentPage = 1; render(); });
-}
-
-function recordMatchesFilters(r){
-  const countries = msCountry ? new Set(msCountry.getSelected()) : null;
-  const categories = msCategory ? new Set(msCategory.getSelected()) : null;
-  const styles = msStyle ? new Set(msStyle.getSelected()) : null;
-  if(countries && countries.size && !countries.has(r.country||'')) return false;
-  if(categories && categories.size && !categories.has(r.categoryName||'')) return false;
-  if(styles && styles.size && !styles.has(r.styleName||'')) return false;
-  return true;
-}
-
-function formatTimestamp(ts){
-  const n = Number(ts);
-  if(Number.isFinite(n)){
-    // Many sheets show scientific notation milliseconds; coerce
-    const ms = Math.round(n);
-    try{ return new Date(ms).toLocaleString(); }catch(_){ return String(ts); }
-  }
-  return String(ts);
-}
-
-/** @type {VideoRecord[]} */
-let allRecords = [];
-let visibleRecords = [];
-let selectedIndex = -1;
-let currentPage = 1;
-let pageSize = 30;
-
-function render(){
-  visibleRecords = allRecords.filter(recordMatchesFilters);
-  const total = visibleRecords.length;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  currentPage = Math.min(Math.max(1, currentPage), totalPages);
-  const start = (currentPage-1) * pageSize;
-  const pageItems = visibleRecords.slice(start, start + pageSize);
-  countLabel.textContent = `Đã tải ${total} video.`;
-  pageInfo.textContent = `${currentPage}/${totalPages}`;
-  prevPageBtn.disabled = currentPage<=1; nextPageBtn.disabled = currentPage>=totalPages;
-
-  // Build top strip: only 1 row of chips
-  // Show chips count equal to current page size
-  const stripItems = pageItems;
-  stripEl.innerHTML = stripItems.map((r,i)=>{
-    return `
-      <div class="chip" data-index="${i}">
-        <span class="title">${escapeHtml(r.styleName)}</span>
-        <span class="sub">${escapeHtml(r.categoryName||'')}</span>
-        <span class="sub">${escapeHtml(r.country||'')}</span>
-      </div>`;
-  }).join('');
-
-  // Remove legacy views (cards/rows)
-
-  const selectFromLocal = (idx)=>{ selectCard(idx); };
-  stripEl.querySelectorAll('.chip').forEach(chip=>chip.addEventListener('click',()=>{
-    const idx = Number(chip.getAttribute('data-index'));
-    selectFromLocal(idx);
-  }));
-  function updateStripNav(){
-    const canScrollLeft = stripEl.scrollLeft > 0;
-    const canScrollRight = stripEl.scrollWidth - stripEl.clientWidth - stripEl.scrollLeft > 1;
-    stripPrev.disabled = !canScrollLeft;
-    stripNext.disabled = !canScrollRight;
-  }
-  updateStripNav();
-  stripEl.removeEventListener('scroll', updateStripNav);
-  stripEl.addEventListener('scroll', updateStripNav);
-  stripPrev.onclick = ()=> stripEl.scrollBy({ left: -stripEl.clientWidth, behavior: 'smooth' });
-  stripNext.onclick = ()=> stripEl.scrollBy({ left: stripEl.clientWidth, behavior: 'smooth' });
-  cardsEl.querySelectorAll('.card').forEach(card=>card.addEventListener('click',()=>{
-    const idx = Number(card.getAttribute('data-index'));
-    selectFromLocal(idx);
-  }));
-  rowsEl.querySelectorAll('.row-item').forEach(row=>row.addEventListener('click',()=>{
-    const idx = Number(row.getAttribute('data-index'));
-    selectFromLocal(idx);
-  }));
-
-  // Maintain selection
-  if(pageItems.length){ selectCard(Math.max(0, Math.min(selectedIndex - start, pageItems.length-1))); }
-}
-
-function escapeHtml(s){
-  return String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
-}
-
-function selectCard(idx){
-  const start = (currentPage-1) * pageSize;
-  selectedIndex = start + idx;
-  const localSelect = (selector)=>{
-    document.querySelectorAll(selector).forEach((el,i)=>{
-      if(el.closest('#rows')){
-        el.classList.toggle('selected', i===idx);
-      }
-      if(el.closest('#cards')){
-        el.classList.toggle('selected', i===idx);
-      }
-    });
-  };
-  stripEl.querySelectorAll('.chip').forEach((el,i)=>{
-    el.classList.toggle('selected', i===idx);
-  });
-  // Ensure selected chip is visible
-  const chipEl = stripEl.querySelector(`.chip[data-index="${idx}"]`);
-  if(chipEl && typeof chipEl.scrollIntoView === 'function'){
-    chipEl.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
-  }
-  const rec = visibleRecords[selectedIndex];
-  if(!rec) return;
-  if(rec.outputUrl){
-    try{ videoEl.pause(); }catch(_){ }
-    videoEl.src = rec.outputUrl;
-    try{ videoEl.currentTime = 0; }catch(_){ }
-    videoLinkEl.textContent = rec.outputUrl;
-    videoLinkEl.href = rec.outputUrl;
-    // Try to autoplay on selection change
-    setTimeout(()=>{ try{ videoEl.play().catch(()=>{}); }catch(_){ } }, 0);
-  } else {
-    videoEl.removeAttribute('src');
-    videoLinkEl.textContent = '';
-    videoLinkEl.removeAttribute('href');
-  }
-}
-
-// Keyboard navigation across chips
-stripEl.addEventListener('keydown', (e)=>{
-  if(!visibleRecords.length) return;
-  const columns = computeColumnCount();
-  if(['ArrowRight','ArrowLeft','ArrowDown','ArrowUp','Home','End'].includes(e.key)){
-    e.preventDefault();
-  }
-  const start = (currentPage-1) * pageSize;
-  const endExclusive = start + Math.min(pageSize, Math.max(0, visibleRecords.length - start));
-  const localIndex = Math.max(0, Math.min((selectedIndex - start), Math.max(0, endExclusive - start -1)));
-  function goToGlobal(newGlobal){
-    const newPage = Math.floor(newGlobal / pageSize) + 1;
-    if(newPage !== currentPage){ currentPage = newPage; render(); return; }
-    selectCard(newGlobal - start);
-  }
-  if(e.key==='ArrowRight') goToGlobal(Math.min(visibleRecords.length-1, selectedIndex+1));
-  if(e.key==='ArrowLeft') goToGlobal(Math.max(0, selectedIndex-1));
-  if(e.key==='ArrowDown') goToGlobal(Math.min(visibleRecords.length-1, selectedIndex+columns));
-  if(e.key==='ArrowUp') goToGlobal(Math.max(0, selectedIndex-columns));
-  if(e.key==='Home') goToGlobal(start);
-  if(e.key==='End') goToGlobal(Math.min(visibleRecords.length-1, endExclusive-1));
-});
-
-function computeColumnCount(){
-  const start = (currentPage-1) * pageSize;
-  const remaining = Math.max(0, visibleRecords.length - start);
-  return Math.max(1, Math.min(pageSize, remaining));
-}
-
-// Filter listeners for multi-selects
-// No-op: handlers are attached in populateFilters once data is available
-pageSizeInput.addEventListener('change', ()=>{
-  const v = Number(pageSizeInput.value);
-  if(Number.isFinite(v) && v>0){ pageSize = Math.floor(v); currentPage = 1; render(); }
-});
-prevPageBtn.addEventListener('click', ()=>{ if(currentPage>1){ currentPage--; render(); } });
-nextPageBtn.addEventListener('click', ()=>{ const totalPages = Math.max(1, Math.ceil(visibleRecords.length / pageSize)); if(currentPage<totalPages){ currentPage++; render(); } });
-
-// Load from local storage
-const lastUrl = localStorage.getItem('sheetUrl');
-if(lastUrl){ sheetUrlInput.value = lastUrl; }
-
-btnLoad.addEventListener('click', async ()=>{
-  const url = sheetUrlInput.value.trim();
-  if(!url){ alert('Vui lòng dán URL Google Sheet'); return; }
-  localStorage.setItem('sheetUrl', url);
-  btnLoad.disabled = true; btnLoad.textContent = 'Đang tải...';
-  try{
-    const rows = await loadSheetRows(url);
-    allRecords = groupRows(rows).filter(r => r && r.status === 'success' && r.outputUrl);
-    populateFilters(allRecords);
-    render();
-    // Focus strip for keyboard navigation
-    setTimeout(()=>{ stripEl.focus(); selectCard(0); }, 0);
-  }catch(err){
-    console.error(err);
-    if(!allRecords || allRecords.length === 0){
-      alert('Không thể tải sheet. Kiểm tra quyền chia sẻ và URL.');
-    }
-  }finally{
-    btnLoad.disabled = false; btnLoad.textContent = 'Tải danh sách';
-  }
-});
-
-// Prefill the demo URL from the prompt if available
-if(!sheetUrlInput.value){
-  sheetUrlInput.value = 'https://docs.google.com/spreadsheets/d/1JY0GzK2sCLsz4njaiGEwAn49PXlkaI4I3f_LJ7jfMZs/edit?gid=478131050#gid=478131050';
-}
-
-/**
- * Sheet loading flow (referencing your snippet):
- * - Try native CSV endpoints
- * - If fails or returns HTML, try gviz: out:csv
- * - If still fails, proxy through r.jina.ai
- * - Finally, as last resort, use GViz JSONP
- */
-async function loadSheetRows(inputUrl){
-  const ids = extractSheetIdAndGid(inputUrl);
-  if(!ids) throw new Error('URL không hợp lệ');
+async function loadSheetRows(inputUrl) {
   const errors = [];
-  // 1) Prefer GViz JSONP (bypass CORS reliably)
-  try{
-    const rows = await fetchViaGvizJsonp(ids.id, ids.gid);
-    if(rows && rows.length) return rows;
-  }catch(e){ errors.push({ jsonp:true, error: String(e) }); }
-  // 2) Fallback to CSV via r.jina.ai proxy
-  try{
-    const candidates = buildCandidateCsvUrls(inputUrl);
-    for(const url of candidates){
-      const proxied = `https://r.jina.ai/http/${url.replace(/^https?:\/\//,'')}`;
-      try{
-        const text = await fetchCsvText(proxied);
-        return parseCsv(text);
-      }catch(err){ errors.push({ proxied:url, error:String(err) }); }
+  const ids = extractSheetIdAndGid(inputUrl);
+
+  // Prefer GViz JSON for real Sheet URLs (no CORS)
+  if (ids && ids.id) {
+    try {
+      const rows = await fetchViaGvizJsonp(ids.id, ids.gid);
+      if (rows && rows.length) return rows;
+    } catch (e) {
+      console.warn('[loader] GViz JSONP failed', e);
+      errors.push({ step: 'gviz_jsonp', error: String(e) });
     }
-  }catch(err){ errors.push({ build:true, error:String(err) }); }
-  throw new Error('All load attempts failed: ' + JSON.stringify(errors).slice(0,500));
+
+    // Try proxied CSV exports
+    try {
+      const candidates = buildCandidateCsvUrls(inputUrl);
+      for (const url of candidates) {
+        const proxied = `/proxy?url=${encodeURIComponent(url)}`;
+        try {
+          const text = await fetchCsvText(proxied);
+          const rows = parseCsv(text);
+          if (rows && rows.length) return rows;
+        } catch (err) {
+          console.warn('[loader] proxied CSV failed', url, err);
+          errors.push({ step: 'proxied_csv', url, error: String(err) });
+        }
+      }
+    } catch (err) {
+      errors.push({ step: 'build_candidates', error: String(err) });
+    }
+  }
+
+  // Direct fetch as-is via proxy
+  try {
+    const directProxied = `/proxy?url=${encodeURIComponent(inputUrl)}`;
+    const text = await fetchCsvText(directProxied);
+    const rows = parseCsv(text);
+    if (rows && rows.length) return rows;
+  } catch (err) {
+    console.warn('[loader] direct proxied fetch failed', err);
+    errors.push({ step: 'direct_proxied', error: String(err) });
+  }
+
+  throw new Error('Không thể tải sheet. Chi tiết: ' + JSON.stringify(errors).slice(0, 800));
 }
 
-function parseGvizTableToRows(resp){
+function parseGvizTableToRows(resp) {
   const table = resp?.table;
-  if(!table) return [];
-  const header = table.cols.map(c=>c.label || c.id || '');
+  if (!table) return [];
+  const header = table.cols.map(c => c.label || c.id || '');
   const rows = [header];
-  for(const r of table.rows){
-    rows.push((r.c||[]).map(c=>{
-      if(!c) return '';
-      if(typeof c.f !== 'undefined' && c.f !== null) return String(c.f);
-      if(typeof c.v !== 'undefined' && c.v !== null) return String(c.v);
+  for (const r of table.rows) {
+    rows.push((r.c || []).map(c => {
+      if (!c) return '';
+      if (typeof c.f !== 'undefined' && c.f !== null) return String(c.f);
+      if (typeof c.v !== 'undefined' && c.v !== null) return String(c.v);
       return '';
     }));
   }
   return rows;
 }
 
-function fetchViaGvizJsonp(id, gid){
-  return new Promise((resolve, reject)=>{
-    const cbName = `__gviz_cb_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const prev = (window.google && window.google.visualization && window.google.visualization.Query && window.google.visualization.Query.setResponse) || null;
+function fetchViaGvizJsonp(id, gid) {
+  return new Promise((resolve, reject) => {
+    const prev = (window.google && window.google.visualization &&
+      window.google.visualization.Query && window.google.visualization.Query.setResponse) || null;
     window.google = window.google || {};
     window.google.visualization = window.google.visualization || {};
     window.google.visualization.Query = window.google.visualization.Query || {};
-    window.google.visualization.Query.setResponse = (resp)=>{
-      try{ resolve(parseGvizTableToRows(resp)); }
-      catch(err){ reject(err); }
+    window.google.visualization.Query.setResponse = (resp) => {
+      try { resolve(parseGvizTableToRows(resp)); }
+      catch (err) { reject(err); }
       cleanup();
     };
-    function cleanup(){
-      if(prev){ window.google.visualization.Query.setResponse = prev; }
+    function cleanup() {
+      if (prev) window.google.visualization.Query.setResponse = prev;
       script.remove();
       clearTimeout(timer);
     }
     const script = document.createElement('script');
     const base = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq`;
     const qp = new URLSearchParams();
-    if(gid) qp.set('gid', gid);
+    if (gid) qp.set('gid', gid);
     qp.set('tqx', 'out:json');
     script.src = `${base}?${qp.toString()}`;
-    script.onerror = ()=>{ cleanup(); reject(new Error('Script load error')); };
+    script.onerror = () => { cleanup(); reject(new Error('Script load error')); };
     document.head.appendChild(script);
-    const timer = setTimeout(()=>{ cleanup(); reject(new Error('Timeout')); }, 15000);
+    const timer = setTimeout(() => { cleanup(); reject(new Error('Timeout')); }, 15000);
   });
 }
 
+// -------------------------
+// Grouping logic (5-row success)
+// -------------------------
+function groupRows(rows) {
+  const header = rows[0] || [];
+  const idxKey = {
+    event_name: findColumnIndex(header, ['event_name']),
+    key: findColumnIndex(header, ['event_params.key']),
+    value: findColumnIndex(header, ['event_params.value.string_value']),
+    ts: findColumnIndex(header, ['event_timestamp']),
+    country: findColumnIndex(header, ['geo.country', 'geo_country', 'country']),
+    subStatus: findColumnIndex(header, ['subscription_status']),
+    userPseudoId: findColumnIndex(header, ['user_pseudo_id', 'user_pseudoid'])
+  };
 
+  const data = rows.slice(1);
+  const records = [];
+  const hasEvent = idxKey.event_name !== -1 && idxKey.key !== -1 && idxKey.value !== -1;
+  if (hasEvent) {
+    for (let i = 0; i < data.length;) {
+      const r0 = data[i];
+      const ev = (r0[idxKey.event_name] || '').toString().toLowerCase();
+      const isSuccess = ev.includes('success');
+      if (!isSuccess) { i++; continue; }
+      const chunk = data.slice(i, i + 5);
+      if (chunk.length < 5) break;
+      const allSuccess = chunk.every(r => ((r[idxKey.event_name] || '').toString().toLowerCase().includes('success')));
+      if (!allSuccess) { i++; continue; }
+      const assembled = { input1: null, input2: null, style: null, category: null, output: null, ts: null, country: null, subStatus: null, userPseudoId: null };
+      for (const r of chunk) {
+        const k = r[idxKey.key];
+        const v = r[idxKey.value];
+        if (k === 'input1') assembled.input1 = v;
+        else if (k === 'input2') assembled.input2 = v;
+        else if (k === 'style') assembled.style = v;
+        else if (k === 'category') assembled.category = v;
+        else if (k === 'output') assembled.output = v;
+        if (!assembled.ts) assembled.ts = r[idxKey.ts];
+        if (!assembled.country) assembled.country = r[idxKey.country];
+        if (assembled.subStatus == null && idxKey.subStatus !== -1) { const sv = r[idxKey.subStatus]; if (sv && sv !== '#N/A') assembled.subStatus = sv; }
+        if (assembled.userPseudoId == null && idxKey.userPseudoId !== -1) { const up = r[idxKey.userPseudoId]; if (up) assembled.userPseudoId = up; }
+      }
+      if (assembled.output) {
+        records.push({
+          id: records.length,
+          input1Url: assembled.input1 || undefined,
+          input2Url: assembled.input2 || undefined,
+          styleName: trimPrefix(assembled.style || '', 'Style Name:'),
+          categoryName: trimPrefix(assembled.category || '', 'Category Name:'),
+          outputUrl: assembled.output || undefined,
+          timestamp: assembled.ts || '',
+          country: assembled.country || '',
+          subscriptionStatus: assembled.subStatus || '',
+          userPseudoId: assembled.userPseudoId || ''
+        });
+      }
+      i += 5;
+    }
+    return records;
+  }
+
+  // Fallback streaming assembler
+  let acc = { input1: null, input2: null, style: null, category: null, output: null, ts: null, country: null, subStatus: null, userPseudoId: null };
+  function flush() {
+    if (!acc.style && !acc.category && !acc.output) return;
+    if (!acc.output) { acc = { input1: null, input2: null, style: null, category: null, output: null, ts: null, country: null, subStatus: null, userPseudoId: null }; return; }
+    records.push({ id: records.length, input1Url: acc.input1 || undefined, input2Url: acc.input2 || undefined, styleName: trimPrefix(acc.style || '', 'Style Name:'), categoryName: trimPrefix(acc.category || '', 'Category Name:'), outputUrl: acc.output || undefined, timestamp: acc.ts || '', country: acc.country || '', subscriptionStatus: acc.subStatus || '', userPseudoId: acc.userPseudoId || '' });
+    acc = { input1: null, input2: null, style: null, category: null, output: null, ts: null, country: null, subStatus: null, userPseudoId: null };
+  }
+  for (const r of data) {
+    const key = r[idxKey.key];
+    const val = r[idxKey.value];
+    const ts = r[idxKey.ts];
+    const country = r[idxKey.country];
+    const rawSub = idxKey.subStatus !== -1 ? r[idxKey.subStatus] : null;
+    const subStatus = rawSub && rawSub !== '#N/A' ? rawSub : null;
+    if (key === 'input1') { if (acc.input1 || acc.input2 || acc.style || acc.category || acc.output) flush(); acc.input1 = val; acc.ts = ts; acc.country = country; acc.subStatus = subStatus; acc.userPseudoId = idxKey.userPseudoId !== -1 ? r[idxKey.userPseudoId] : acc.userPseudoId; }
+    else if (key === 'input2') { acc.input2 = val; acc.ts = ts; acc.country = country; acc.subStatus = subStatus ?? acc.subStatus; acc.userPseudoId = idxKey.userPseudoId !== -1 ? r[idxKey.userPseudoId] : acc.userPseudoId; }
+    else if (key === 'style') { if (acc.style || acc.category || acc.output) flush(); acc.style = val; acc.ts = ts; acc.country = country; acc.subStatus = subStatus; acc.userPseudoId = idxKey.userPseudoId !== -1 ? r[idxKey.userPseudoId] : acc.userPseudoId; }
+    else if (key === 'category') { acc.category = val; acc.ts = ts; acc.country = country; acc.subStatus = subStatus ?? acc.subStatus; acc.userPseudoId = idxKey.userPseudoId !== -1 ? r[idxKey.userPseudoId] : acc.userPseudoId; }
+    else if (key === 'output') { acc.output = val; acc.ts = ts; acc.country = country; acc.subStatus = subStatus ?? acc.subStatus; acc.userPseudoId = idxKey.userPseudoId !== -1 ? r[idxKey.userPseudoId] : acc.userPseudoId; flush(); }
+  }
+  flush();
+  return records;
+}
+
+function uniqueSorted(values) {
+  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
+function formatTimestamp(ts) {
+  const n = Number(ts);
+  if (Number.isFinite(n)) { const ms = Math.round(n); try { return new Date(ms).toLocaleString(); } catch (_) { return String(ts); } }
+  return String(ts);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// -------------------------
+// UI: strip + selection
+// -------------------------
+function applyFilters() {
+  filteredRecords = allRecords;
+  currentPage = 1;
+  renderStrip();
+  updatePagination();
+}
+
+function renderVideoCards(records) {
+  if (!records.length) { 
+    videoCards.innerHTML = '<div class="empty-state">Không có dữ liệu</div>'; 
+    return; 
+  }
+  
+  const start = (currentPage - 1) * pageSize;
+  const end = start + pageSize;
+  const pageRecords = records.slice(start, end);
+  
+  videoCards.innerHTML = pageRecords.map((r, idx) => `
+    <div class="video-card" id="card-${idx + 1}" data-page-index="${idx}" data-id="${r.id}" onclick="selectVideo(${r.id})">
+      <div class="video-title">${escapeHtml(r.styleName || 'Unknown Style')}</div>
+      <div class="video-category">${escapeHtml(r.categoryName || 'Unknown Category')}</div>
+      <div class="video-location">${escapeHtml(r.country || 'Unknown Country')}</div>
+    </div>
+  `).join('');
+
+  // Keep selection visible if any
+  if (selectedGlobalIndex >= 0) {
+    const within = (selectedGlobalIndex % pageSize) + 1;
+    const el = document.getElementById(`card-${within}`);
+    if (el) el.classList.add('selected');
+  }
+}
+
+function selectVideo(id) {
+  selectedRecord = allRecords.find(r => r.id === id);
+  if (!selectedRecord) return;
+  // Track global index for keyboard nav
+  const gi = filteredRecords.findIndex(r => r.id === id);
+  if (gi !== -1) selectedGlobalIndex = gi;
+  
+  // Update selected card
+  document.querySelectorAll('.video-card').forEach(card => {
+    card.classList.remove('selected');
+  });
+  document.querySelector(`[data-id="${id}"]`).classList.add('selected');
+  
+  // Show inline preview
+  renderInlinePreview();
+}
+
+function renderInlinePreview() {
+  if (!selectedRecord) return;
+  
+  // input1
+  if (selectedRecord.input1Url) {
+    inlineImg1.src = selectedRecord.input1Url;
+    inlineImg1.style.display = 'block';
+    inlineLink1.href = selectedRecord.input1Url;
+    inlineLink1.textContent = 'View Image 1';
+  } else {
+    inlineImg1.style.display = 'none';
+    inlineLink1.textContent = 'No Image 1';
+    inlineLink1.href = '#';
+  }
+  // input2
+  if (selectedRecord.input2Url) {
+    inlineImg2.src = selectedRecord.input2Url;
+    inlineImg2.style.display = 'block';
+    inlineLink2.href = selectedRecord.input2Url;
+    inlineLink2.textContent = 'View Image 2';
+  } else {
+    inlineImg2.style.display = 'none';
+    inlineLink2.textContent = 'No Image 2';
+    inlineLink2.href = '#';
+  }
+  // video
+  if (selectedRecord.outputUrl) {
+    try { inlineVideo.pause(); } catch {}
+    inlineVideo.removeAttribute('src');
+    inlineVideo.load();
+    inlineVideo.src = selectedRecord.outputUrl;
+    // Autoplay ngay khi chuyển thẻ
+    inlineVideo.autoplay = true;
+    inlineVideo.muted = true; // đảm bảo autoplay trên nhiều trình duyệt
+    inlineVideo.playsInline = true;
+    inlineVideo.controls = true;
+    inlineVideo.style.display = 'block';
+    // play() sau khi gán src
+    const tryPlay = () => {
+      const p = inlineVideo.play();
+      if (p && typeof p.then === 'function') p.catch(() => {});
+    };
+    if (inlineVideo.readyState >= 2) tryPlay(); else inlineVideo.oncanplay = tryPlay;
+
+    inlineLinkVideo.href = selectedRecord.outputUrl;
+    inlineLinkVideo.textContent = 'Download Video';
+  } else {
+    inlineVideo.style.display = 'none';
+    inlineLinkVideo.textContent = 'No Video';
+    inlineLinkVideo.href = '#';
+  }
+  inlinePreview.style.display = 'block';
+}
+
+function updatePagination() {
+  const totalPages = Math.ceil(filteredRecords.length / pageSize);
+  pageInfo.textContent = `${currentPage}/${Math.max(totalPages, 1)}`;
+  prevBtn.disabled = currentPage <= 1;
+  nextBtn.disabled = currentPage >= totalPages;
+  countEl.textContent = `Đã tải ${filteredRecords.length} video.`;
+}
+
+function goToPage(page) {
+  const totalPages = Math.ceil(filteredRecords.length / pageSize);
+  if (page < 1 || page > totalPages) return;
+  currentPage = page;
+  renderVideoCards(filteredRecords);
+  updatePagination();
+}
+
+function applyFilters() {
+  // Apply multi-select filters
+  filteredRecords = allRecords.filter(r =>
+    (activeFilters.country.size === 0 || activeFilters.country.has(r.country || '')) &&
+    (activeFilters.category.size === 0 || activeFilters.category.has(r.categoryName || '')) &&
+    (activeFilters.style.size === 0 || activeFilters.style.has(r.styleName || '')) &&
+    (activeFilters.subscription.size === 0 || activeFilters.subscription.has(r.subscriptionStatus || '')) &&
+    (activeFilters.user.size === 0 || activeFilters.user.has(r.userPseudoId || ''))
+  );
+  currentPage = 1;
+  renderVideoCards(filteredRecords);
+  updatePagination();
+}
+
+// (legacy strip/detail funcs removed)
+
+// Events
+loadBtn.addEventListener('click', async () => {
+  const url = sheetUrlInput.value.trim();
+  if (!url) { alert('Vui lòng nhập URL Google Sheet'); return; }
+  loadBtn.disabled = true; loadBtn.textContent = '⏳ Đang tải...';
+  try {
+    const rows = await loadSheetRows(url);
+    allRecords = groupRows(rows);
+    applyFilters();
+    // Không hiện alert; chỉ log nhẹ nếu rỗng
+    if (allRecords.length === 0) {
+      console.warn('Không tìm thấy dữ liệu video nào trong sheet');
+    }
+    // Focus strip để điều hướng arrow hoạt động chắc chắn
+    setTimeout(() => { try { videoCards && videoCards.focus(); } catch {} }, 0);
+  } catch (error) {
+    console.error('Load error:', error);
+    // Không hiện alert gây phiền; hiển thị console
+  } finally { loadBtn.disabled = false; loadBtn.textContent = 'Tải'; }
+});
+
+// Pagination events
+prevBtn.addEventListener('click', () => goToPage(currentPage - 1));
+nextBtn.addEventListener('click', () => goToPage(currentPage + 1));
+pageSizeSelect.addEventListener('change', (e) => {
+  pageSize = parseInt(e.target.value);
+  currentPage = 1;
+  renderVideoCards(filteredRecords);
+  updatePagination();
+});
+
+// Strip navigation
+stripPrev.addEventListener('click', () => {
+  videoCards.scrollBy({ left: -300, behavior: 'smooth' });
+});
+stripNext.addEventListener('click', () => {
+  videoCards.scrollBy({ left: 300, behavior: 'smooth' });
+});
+
+// Filter events
+filterTags.forEach(tag => {
+  tag.addEventListener('click', () => {
+    const type = tag.getAttribute('data-filter');
+    buildAndShowFilter(type);
+  });
+});
+
+function buildAndShowFilter(type){
+  if (!type) return;
+  filtersTitle.textContent = `Filter: ${type}`;
+  // Build unique options from current allRecords
+  const values = Array.from(new Set(allRecords.map(r => {
+    if (type === 'country') return r.country || '';
+    if (type === 'category') return r.categoryName || '';
+    if (type === 'style') return r.styleName || '';
+    if (type === 'subscription') return r.subscriptionStatus || '';
+    if (type === 'user') return r.userPseudoId || '';
+    return '';
+  }).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+
+  filtersOptions.innerHTML = values.map(v => {
+    const selected = activeFilters[type].has(v) ? 'selected' : '';
+    return `<div class="option-chip ${selected}" data-type="${type}" data-value="${encodeHTML(v)}">${escapeHtml(v)}</div>`;
+  }).join('');
+
+  // Toggle selection
+  filtersOptions.querySelectorAll('.option-chip').forEach(el => {
+    el.addEventListener('click', () => {
+      const t = el.getAttribute('data-type');
+      const val = el.getAttribute('data-value');
+      if (activeFilters[t].has(val)) activeFilters[t].delete(val); else activeFilters[t].add(val);
+      el.classList.toggle('selected');
+    });
+  });
+
+  filtersPanel.style.display = 'block';
+}
+
+filtersApply.addEventListener('click', () => {
+  filtersPanel.style.display = 'none';
+  applyFilters();
+  renderActiveFiltersBar();
+});
+
+filtersClear.addEventListener('click', () => {
+  const current = filtersTitle.textContent.split(':')[1]?.trim();
+  const map = { Country:'country', Category:'category', Style:'style', Subscription:'subscription', User:'user' };
+  const type = map[current] || current;
+  if (type && activeFilters[type]) activeFilters[type].clear();
+  filtersOptions.querySelectorAll('.option-chip.selected').forEach(e=>e.classList.remove('selected'));
+  renderActiveFiltersBar();
+});
+
+filtersClose.addEventListener('click', () => { filtersPanel.style.display = 'none'; });
+
+function encodeHTML(s){ return String(s).replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
+
+function renderActiveFiltersBar(){
+  const entries = [];
+  for (const key of Object.keys(activeFilters)) {
+    if (activeFilters[key].size > 0) {
+      activeFilters[key].forEach(v => entries.push({ key, label: `${key}: ${v}` }));
+    }
+  }
+  if (entries.length === 0) { activeFiltersBar.style.display = 'none'; activeFiltersBar.innerHTML=''; return; }
+  activeFiltersBar.style.display = 'flex';
+  activeFiltersBar.innerHTML = entries.map((e,i)=>
+    `<span class="active-pill" data-type="${e.key}" data-value="${encodeHTML(e.label.split(': ')[1])}">${escapeHtml(e.label)} <span class="remove">✕</span></span>`
+  ).join('');
+  activeFiltersBar.querySelectorAll('.active-pill .remove').forEach((btn)=>{
+    btn.addEventListener('click', ()=>{
+      const pill = btn.parentElement;
+      const t = pill.getAttribute('data-type');
+      const val = pill.getAttribute('data-value');
+      if (activeFilters[t]) { activeFilters[t].delete(val); applyFilters(); renderActiveFiltersBar(); }
+    });
+  });
+}
+
+// Global function for card selection (used in onclick)
+window.selectVideo = selectVideo;
+
+document.addEventListener('DOMContentLoaded', () => {
+  const def = 'https://docs.google.com/spreadsheets/d/1J2qIoQaTAWkBL81EGibg4k1i0ldgesQuE_29IT2rGC4/edit?pli=1&gid=478131050#gid=478131050';
+  sheetUrlInput.value = def;
+  updatePagination();
+});
+
+// Keyboard navigation for video cards: ArrowLeft / ArrowRight
+function selectByOffset(delta) {
+  if (!filteredRecords.length) return;
+  if (selectedGlobalIndex < 0) selectedGlobalIndex = (currentPage - 1) * pageSize;
+  let newIndex = Math.min(Math.max(selectedGlobalIndex + delta, 0), filteredRecords.length - 1);
+  const newPage = Math.floor(newIndex / pageSize) + 1;
+  if (newPage !== currentPage) {
+    goToPage(newPage);
+  }
+  const rec = filteredRecords[newIndex];
+  if (rec) {
+    selectedGlobalIndex = newIndex;
+    // Wait a tick if page changed to ensure DOM updated
+    const run = () => {
+      selectVideo(rec.id);
+      const withinPageIndex = (newIndex % pageSize) + 1;
+      const el = document.getElementById(`card-${withinPageIndex}`) || document.querySelector(`.video-card[data-id="${rec.id}"]`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    };
+    if (newPage !== currentPage) setTimeout(run, 0); else run();
+  }
+}
+
+function handleArrowKeys(e){
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); selectByOffset(-1); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); selectByOffset(1); }
+}
+
+// Capture phase to beat browser's default scroll on scrollable containers
+document.addEventListener('keydown', handleArrowKeys, { capture: true });
+window.addEventListener('keydown', handleArrowKeys, { capture: true });
+// Also bind directly on the scroll container to suppress native arrow scroll
+if (videoCards) {
+  videoCards.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      e.stopPropagation();
+      handleArrowKeys(e);
+    }
+  }, { capture: true });
+}
